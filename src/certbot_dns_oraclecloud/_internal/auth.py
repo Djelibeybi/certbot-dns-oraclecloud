@@ -1,47 +1,55 @@
 """OCI authentication selection and DNS client construction."""
 
-from pathlib import Path
-from typing import Any, Final
+from typing import Final
 
 from certbot import errors
-from oci import config as oci_config
-from oci.auth.signers import (
-    InstancePrincipalsSecurityTokenSigner,
-    get_resource_principals_signer,
+
+from .protocols import (
+    DnsClientProtocol,
+    OciAuthenticationError,
+    create_api_key_dns_client,
+    create_instance_principal_dns_client,
+    create_resource_principal_dns_client,
 )
-from oci.dns import DnsClient
 
 AUTH_TYPES: Final = ("api_key", "instance_principal", "resource_principal")
+UNSUPPORTED_AUTHENTICATION_MESSAGE: Final = "Unsupported OCI authentication mode: {}"
 
 
-def create_dns_client(auth_type: str, credentials: str, profile: str) -> Any:
-    """Create an OCI DNS client for one explicitly selected authentication mode."""
+def create_dns_client(auth_type: str, credentials: str, profile: str) -> DnsClientProtocol:
+    """Create a DNS client for one explicitly selected authentication mode."""
+    if auth_type == "api_key":
+        return _api_key_client(credentials, profile)
+    if auth_type == "instance_principal":
+        return _instance_principal_client()
+    if auth_type == "resource_principal":
+        return _resource_principal_client()
+    message = UNSUPPORTED_AUTHENTICATION_MESSAGE.format(auth_type)
+    raise errors.PluginError(message)
+
+
+def _api_key_client(credentials: str, profile: str) -> DnsClientProtocol:
+    """Create an API-key client without reflecting sensitive configuration data."""
     try:
-        if auth_type == "api_key":
-            config_path = str(Path(credentials).expanduser())
-            loaded = oci_config.from_file(file_location=config_path, profile_name=profile)
-            oci_config.validate_config(loaded)
-            return DnsClient(loaded)
+        return create_api_key_dns_client(credentials, profile)
+    except OciAuthenticationError:
+        message = "Unable to initialize OCI API-key authentication."
+    raise errors.PluginError(message) from None
 
-        if auth_type == "instance_principal":
-            return DnsClient(config={}, signer=InstancePrincipalsSecurityTokenSigner())
 
-        if auth_type == "resource_principal":
-            return DnsClient(config={}, signer=get_resource_principals_signer())
-    except Exception:
-        label = {
-            "api_key": "API-key",
-            "instance_principal": "instance-principal",
-            "resource_principal": "resource-principal",
-        }[auth_type]
-        if auth_type == "api_key":
-            config_path = str(Path(credentials).expanduser())
-            detail = f" from {config_path!r} using profile {profile!r}"
-        else:
-            detail = ""
-        message = f"Unable to initialize OCI {label} authentication{detail}."
-        plugin_error = errors.PluginError(message)
-    else:
-        raise errors.PluginError(f"Unsupported OCI authentication mode: {auth_type}")
+def _instance_principal_client() -> DnsClientProtocol:
+    """Create an instance-principal client without changing authentication mode."""
+    try:
+        return create_instance_principal_dns_client()
+    except OciAuthenticationError:
+        message = "Unable to initialize OCI instance-principal authentication."
+    raise errors.PluginError(message) from None
 
-    raise plugin_error from None
+
+def _resource_principal_client() -> DnsClientProtocol:
+    """Create a resource-principal client without falling back to another mode."""
+    try:
+        return create_resource_principal_dns_client()
+    except OciAuthenticationError:
+        message = "Unable to initialize OCI resource-principal authentication."
+    raise errors.PluginError(message) from None

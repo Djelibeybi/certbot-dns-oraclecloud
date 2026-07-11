@@ -1,20 +1,21 @@
 """Narrow OCI DNS client for ACME TXT challenges."""
 
-import json
-from typing import Any, Protocol
-
 from certbot import errors
 from certbot.plugins import dns_common
-from oci.dns.models import PatchZoneRecordsDetails, RecordOperation
-from oci.exceptions import ServiceError
 
+from .protocols import (
+    DnsClientProtocol,
+    OciRequestError,
+    OciServiceError,
+    RecordOperationProtocol,
+    add_record_operation,
+    get_zone,
+    patch_zone_records,
+    remove_record_operation,
+)
 
-class DnsClientProtocol(Protocol):
-    """The OCI DNS SDK methods needed by this narrow wrapper."""
-
-    def get_zone(self, **kwargs: Any) -> Any: ...
-
-    def patch_zone_records(self, **kwargs: Any) -> Any: ...
+NOT_FOUND_STATUS = 404
+NO_PUBLIC_ZONE_MESSAGE = "Unable to find a public OCI DNS zone for {}."
 
 
 class OciDnsClient:
@@ -27,70 +28,78 @@ class OciDnsClient:
         """Return the most-specific public OCI zone for a validation name."""
         for candidate in dns_common.base_domain_name_guesses(validation_name):
             try:
-                self._client.get_zone(zone_name_or_id=candidate, scope="GLOBAL")
-                return candidate
-            except ServiceError as exc:
-                if exc.status == 404:
+                get_zone(self._client, candidate)
+            except OciServiceError as failure:
+                if failure.status == NOT_FOUND_STATUS:
                     continue
-                plugin_error = self._plugin_error("zone lookup", validation_name, exc)
-            except Exception:
-                plugin_error = errors.PluginError(
-                    f"OCI DNS zone lookup failed for {validation_name}."
-                )
-            raise plugin_error from None
-        raise errors.PluginError(f"Unable to find a public OCI DNS zone for {validation_name}.")
+                message = self._service_failure_message("zone lookup", validation_name, failure)
+            except OciRequestError:
+                message = f"OCI DNS zone lookup failed for {validation_name}."
+            else:
+                return candidate
+            raise errors.PluginError(message) from None
+        message = NO_PUBLIC_ZONE_MESSAGE.format(validation_name)
+        raise errors.PluginError(message)
 
     def add_txt_record(self, validation_name: str, validation: str, ttl: int) -> None:
         """Add exactly one ACME TXT value."""
-        operation = RecordOperation(
-            domain=validation_name,
-            rtype="TXT",
-            rdata=json.dumps(validation),
-            ttl=ttl,
-            operation="ADD",
+        self._patch(
+            validation_name,
+            self._operation_or_error(validation_name, validation, ttl, "ADD"),
+            "record add",
         )
-        self._patch(validation_name, operation, "record add")
 
     def remove_txt_record(self, validation_name: str, validation: str) -> None:
         """Remove exactly one ACME TXT value."""
-        operation = RecordOperation(
-            domain=validation_name,
-            rtype="TXT",
-            rdata=json.dumps(validation),
-            operation="REMOVE",
+        self._patch(
+            validation_name,
+            self._operation_or_error(validation_name, validation, None, "REMOVE"),
+            "record remove",
         )
-        self._patch(validation_name, operation, "record remove")
+
+    def _operation_or_error(
+        self,
+        validation_name: str,
+        validation: str,
+        ttl: int | None,
+        operation: str,
+    ) -> RecordOperationProtocol:
+        """Build one operation without exposing its validation value on failure."""
+        try:
+            if operation == "ADD":
+                if ttl is None:
+                    raise ValueError
+                record_operation = add_record_operation(validation_name, validation, ttl)
+            else:
+                record_operation = remove_record_operation(validation_name, validation)
+        except OciRequestError:
+            message = f"OCI DNS record {operation.lower()} failed for {validation_name}."
+        else:
+            return record_operation
+        raise errors.PluginError(message) from None
 
     def _patch(
-        self, validation_name: str, operation: Any, operation_name: str
+        self, validation_name: str, operation: RecordOperationProtocol, operation_name: str
     ) -> None:
+        """Apply one exact record operation in the public/global scope."""
         zone = self.find_zone(validation_name)
-        details = PatchZoneRecordsDetails(items=[operation])
         try:
-            self._client.patch_zone_records(
-                zone_name_or_id=zone,
-                patch_zone_records_details=details,
-                scope="GLOBAL",
-            )
-        except ServiceError as exc:
-            plugin_error = self._plugin_error(operation_name, validation_name, exc)
-        except Exception:
-            plugin_error = errors.PluginError(
-                f"OCI DNS {operation_name} failed for {validation_name}."
-            )
+            patch_zone_records(self._client, zone, operation)
+        except OciServiceError as failure:
+            message = self._service_failure_message(operation_name, validation_name, failure)
+        except OciRequestError:
+            message = f"OCI DNS {operation_name} failed for {validation_name}."
         else:
             return
-        raise plugin_error from None
+        raise errors.PluginError(message) from None
 
     @staticmethod
-    def _plugin_error(
-        operation: str,
-        record_name: str,
-        exc: Any,
-    ) -> errors.PluginError:
-        fields = [f"status={exc.status}"]
-        if exc.code:
-            fields.append(f"code={exc.code}")
-        return errors.PluginError(
-            f"OCI DNS {operation} failed for {record_name}: {', '.join(fields)}"
-        )
+    def _service_failure_message(operation: str, record_name: str, failure: OciServiceError) -> str:
+        """Render only the safe OCI status/code metadata for a service failure."""
+        fields: list[str] = []
+        if failure.status is not None:
+            fields.append(f"status={failure.status}")
+        if failure.code is not None:
+            fields.append(f"code={failure.code}")
+        suffix = f": {', '.join(fields)}" if fields else ""
+        return f"OCI DNS {operation} failed for {record_name}{suffix}"

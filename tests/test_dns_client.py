@@ -1,18 +1,32 @@
 """Tests for narrow public OCI DNS record operations."""
 
 import traceback
-from unittest.mock import MagicMock, call
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 from certbot import errors
-from oci.exceptions import ServiceError
 
 from certbot_dns_oraclecloud._internal.dns_client import OciDnsClient
+from certbot_dns_oraclecloud._internal.protocols import OciRequestError, OciServiceError
 
 
-def service_error(status: int, code: str = "ServiceError") -> ServiceError:
-    """Build an OCI service error with a non-sensitive message."""
-    return ServiceError(status=status, code=code, headers={}, message="safe OCI message")
+class RawServiceError(Exception):
+    """A test-only stand-in for the untyped OCI service error."""
+
+    def __init__(self, status: int, code: str, message: str) -> None:
+        """Capture safe OCI metadata and an intentionally secret sentinel."""
+        self.status = status
+        self.code = code
+        super().__init__(message)
+
+
+class RawRequestError(Exception):
+    """A test-only stand-in for the untyped OCI request error."""
+
+
+def service_error(status: int, code: str = "ServiceError") -> OciServiceError:
+    """Build a redacted OCI service failure."""
+    return OciServiceError(status=status, code=code)
 
 
 def test_find_zone_uses_most_specific_public_zone() -> None:
@@ -54,15 +68,13 @@ def test_find_zone_fails_immediately_on_non_404() -> None:
 def test_find_zone_redacts_non_404_service_message() -> None:
     sdk = MagicMock()
     secret = "ZONE-SERVICE-SECRET"
-    sdk.get_zone.side_effect = ServiceError(
-        status=403,
-        code="NotAuthorized",
-        headers={},
-        message=secret,
-    )
+    sdk.get_zone.side_effect = RawServiceError(403, "NotAuthorized", secret)
     client = OciDnsClient(sdk)
 
-    with pytest.raises(errors.PluginError) as raised:
+    with (
+        patch("certbot_dns_oraclecloud._internal.protocols._service_error", RawServiceError),
+        pytest.raises(errors.PluginError) as raised,
+    ):
         client.find_zone("_acme-challenge.example.com")
 
     assert secret not in str(raised.value)
@@ -83,13 +95,45 @@ def test_find_zone_reports_when_no_public_zone_exists() -> None:
 
 def test_find_zone_wraps_non_service_failures() -> None:
     sdk = MagicMock()
-    sdk.get_zone.side_effect = RuntimeError("transport internals")
+    sdk.get_zone.side_effect = RawRequestError("transport internals")
     client = OciDnsClient(sdk)
 
-    with pytest.raises(errors.PluginError, match="zone lookup failed") as raised:
+    with (
+        patch("certbot_dns_oraclecloud._internal.protocols._request_exception", RawRequestError),
+        pytest.raises(errors.PluginError, match="zone lookup failed") as raised,
+    ):
         client.find_zone("_acme-challenge.example.com")
 
     assert "transport internals" not in str(raised.value)
+
+
+def test_find_zone_omits_untrusted_service_metadata() -> None:
+    """Only validated OCI status/code metadata is rendered to Certbot."""
+    sdk = MagicMock()
+    sdk.get_zone.side_effect = OciServiceError(status=None, code=None)
+    client = OciDnsClient(sdk)
+
+    with pytest.raises(errors.PluginError) as raised:
+        client.find_zone("_acme-challenge.example.com")
+
+    assert "status=" not in str(raised.value)
+    assert "code=" not in str(raised.value)
+
+
+@patch("certbot_dns_oraclecloud._internal.dns_client.add_record_operation")
+def test_record_construction_error_does_not_expose_validation_value(
+    add_operation: MagicMock,
+) -> None:
+    """Invalid record construction cannot expose an ACME validation value."""
+    sdk = MagicMock()
+    client = OciDnsClient(sdk)
+    sentinel = "ACME VALIDATION SENTINEL"
+    add_operation.side_effect = OciRequestError(sentinel)
+
+    with pytest.raises(errors.PluginError) as raised:
+        client.add_txt_record("_acme-challenge.example.com", sentinel, 60)
+
+    assert sentinel not in str(raised.value)
 
 
 def test_add_txt_record_patches_one_exact_quoted_value() -> None:
@@ -135,15 +179,15 @@ def test_mutation_error_does_not_expose_validation_value() -> None:
     sdk = MagicMock()
     sdk.get_zone.return_value = object()
     secret_validation = "do-not-log-this-token"
-    sdk.patch_zone_records.side_effect = ServiceError(
-        status=409,
-        code="Conflict",
-        headers={},
-        message=f"rejected value {secret_validation}",
+    sdk.patch_zone_records.side_effect = RawServiceError(
+        409, "Conflict", f"rejected value {secret_validation}"
     )
     client = OciDnsClient(sdk)
 
-    with pytest.raises(errors.PluginError) as raised:
+    with (
+        patch("certbot_dns_oraclecloud._internal.protocols._service_error", RawServiceError),
+        pytest.raises(errors.PluginError) as raised,
+    ):
         client.add_txt_record("_acme-challenge.example.com", secret_validation, 60)
 
     assert secret_validation not in str(raised.value)
@@ -156,11 +200,14 @@ def test_transport_mutation_error_does_not_expose_validation_value() -> None:
     sdk = MagicMock()
     sdk.get_zone.return_value = object()
     transport_secret = "transport internals"
-    sdk.patch_zone_records.side_effect = RuntimeError(transport_secret)
+    sdk.patch_zone_records.side_effect = RawRequestError(transport_secret)
     client = OciDnsClient(sdk)
     secret_validation = "do-not-log-this-token"
 
-    with pytest.raises(errors.PluginError, match="record add failed") as raised:
+    with (
+        patch("certbot_dns_oraclecloud._internal.protocols._request_exception", RawRequestError),
+        pytest.raises(errors.PluginError, match="record add failed") as raised,
+    ):
         client.add_txt_record("_acme-challenge.example.com", secret_validation, 60)
 
     assert secret_validation not in str(raised.value)

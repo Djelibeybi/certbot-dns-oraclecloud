@@ -2,8 +2,8 @@
 .idea/
 .venv/
 .coverage
-.mypy_cache/
 .pytest_cache/
+.pyright/
 .ruff_cache/
 __pycache__/
 *.py[cod]

@@ -11,7 +11,6 @@ import tomli
 from certbot_dns_oraclecloud._internal import auth, dns_client
 
 ROOT = Path(__file__).resolve().parents[1]
-PULL_REQUEST_SKIP_CONDITIONS = 3
 
 
 def _production_modules() -> Iterator[Path]:
@@ -139,5 +138,25 @@ def test_documentation_workflow_validates_pull_requests_without_deploying() -> N
 
     assert "  pull_request:\n" in workflow
     assert "run: uv run zensical build --clean --strict" in workflow
-    assert workflow.count("if: github.event_name != 'pull_request'") == PULL_REQUEST_SKIP_CONDITIONS
-    assert "    needs: build\n    if: github.event_name != 'pull_request'" in workflow
+    assert (
+        """      - name: Configure GitHub Pages
+        if: github.event_name != 'pull_request'
+        uses: actions/configure-pages@"""
+        in workflow
+    )
+    assert (
+        """      - name: Upload Pages artifact
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@"""
+        in workflow
+    )
+    assert (
+        """  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    needs: build
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest"""
+        in workflow
+    )

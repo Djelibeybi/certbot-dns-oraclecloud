@@ -35,6 +35,9 @@ dependencies = [
 dns-oraclecloud = "certbot_dns_oraclecloud._internal.dns_oraclecloud:Authenticator"
 
 [dependency-groups]
+docs = [
+  "zensical>=0.0.50",
+]
 dev = [
   "build>=1.5.1",
   "prek>=0.4.9",

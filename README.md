@@ -1,6 +1,17 @@
 # certbot-dns-oraclecloud
 
-Certbot DNS authenticator for public Oracle Cloud Infrastructure DNS zones.
+> **Status: alpha.** A Certbot DNS-01 authenticator for public Oracle Cloud
+> Infrastructure (OCI) DNS zones, released under UPL-1.0.
 
-Run `./scripts/verify-python314-wheel.sh` to verify the locked non-editable
-Python 3.14 test environment and built-wheel import without `PYTHONPATH`.
+Install Certbot and the plugin with uv, then confirm discovery:
+
+```bash
+uv tool install --with certbot-dns-oraclecloud certbot
+certbot plugins --text | grep dns-oraclecloud
+```
+
+This project is **not** a drop-in replacement for `certbot-dns-oci`: its
+configuration and command-line contract are intentionally different.
+
+Read the [documentation](https://djelibeybi.github.io/certbot-dns-oraclecloud/)
+for installation, authentication, OCI IAM, and development guidance.

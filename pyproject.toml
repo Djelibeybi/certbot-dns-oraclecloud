@@ -8,13 +8,13 @@ version = "0.1.0"
 description = "Certbot DNS authenticator for Oracle Cloud Infrastructure DNS"
 readme = "README.md"
 requires-python = ">=3.10"
-license = "MIT"
+license = "UPL-1.0"
 authors = [{ name = "Avi Miller", email = "me@dje.li" }]
 classifiers = [
   "Development Status :: 3 - Alpha",
   "Environment :: Plugins",
   "Intended Audience :: System Administrators",
-  "License :: OSI Approved :: MIT License",
+  "License :: OSI Approved :: Universal Permissive License (UPL)",
   "Operating System :: OS Independent",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.10",

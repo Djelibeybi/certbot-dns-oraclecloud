@@ -6,7 +6,7 @@
 
 **Architecture:** A Certbot-facing authenticator delegates authentication to a strict three-mode factory and DNS mutations to a narrow OCI client wrapper. The wrapper discovers the most-specific public zone and uses atomic OCI `PatchZoneRecords` `ADD` and `REMOVE` operations, keeping SDK types out of the plugin lifecycle layer.
 
-**Tech Stack:** Python 3.10+, uv 0.11+, Certbot 5.6+, OCI Python SDK 2.181+, Hatchling, pytest, Ruff, mypy, GitHub Actions on `ubuntu-latest`
+**Tech Stack:** Python 3.10+, uv 0.11+, Certbot 5.6+, OCI Python SDK 2.181+, Hatchling, pytest, Ruff 0.15+, Pyright 1.1+, prek 0.4+, Zensical 0.0+, GitHub Actions on `ubuntu-latest`
 
 ## Global Constraints
 
@@ -18,6 +18,9 @@
 - Mutate only the exact ACME TXT value through `PatchZoneRecords`; never replace or delete an RRset.
 - Never log or expose credentials, signer tokens, private-key data, or ACME validation values.
 - Use standard GitHub-hosted `ubuntu-latest` runners; local development is primarily arm64 macOS.
+- Use `prek` as the single local quality entry point, with Ruff selecting `ALL` rules and Pyright in strict mode.
+- Do not use broad or bare exception handlers. Catch only failures that can be translated safely, and suppress sensitive SDK exception context from user-facing tracebacks.
+- Build documentation with Zensical and require a clean, strict documentation build in CI.
 - Before adding or updating a dependency, resolve its current release and refresh this plan's recorded baseline if upstream has moved.
 
 ---
@@ -31,14 +34,19 @@
 - `src/certbot_dns_oraclecloud/_internal/auth.py`: strict OCI authentication factory.
 - `src/certbot_dns_oraclecloud/_internal/dns_client.py`: public-zone discovery and exact record mutations.
 - `src/certbot_dns_oraclecloud/_internal/dns_oraclecloud.py`: Certbot authenticator and CLI options.
-- `tests/test_distribution.py`: package metadata checks, extended with Certbot entry-point checks in Task 4.
+- `src/certbot_dns_oraclecloud/_internal/protocols.py`: typed boundary around the OCI SDK client and response shapes.
+- `tests/test_distribution.py`: package metadata checks, extended with Certbot entry-point checks in Task 5.
 - `tests/test_auth.py`: authentication-mode unit tests and secret-redaction checks.
 - `tests/test_dns_client.py`: zone discovery, payload, cleanup, and error tests.
 - `tests/test_dns_oraclecloud.py`: authenticator option and delegation tests.
 - `.github/workflows/ci.yml`: Ubuntu Python 3.10-3.14 verification matrix.
+- `.github/workflows/docs.yml`: Zensical build and GitHub Pages artifact deployment.
+- `prek.toml`: repository hygiene, Ruff, and Pyright hooks.
+- `zensical.toml`: documentation site configuration and navigation.
+- `docs/`: installation, authentication, IAM, usage, and development documentation.
 - `.gitignore`: local Python, uv, build, and test artifacts.
 - `LICENSE`: Universal Permissive License (UPL), Version 1.0.
-- `README.md`: installation, authentication, IAM, usage, and development documentation.
+- `README.md`: concise project overview and links to the Zensical documentation.
 
 ---
 
@@ -56,7 +64,7 @@
 - Generate: `uv.lock`
 
 **Interfaces:**
-- Produces: installable package version `0.1.0`; Certbot entry-point metadata is added with its real target in Task 4.
+- Produces: installable package version `0.1.0`; Certbot entry-point metadata is added with its real target in Task 5.
 - Consumes: no project code.
 
 - [ ] **Step 1: Write the failing distribution metadata test**
@@ -116,7 +124,8 @@ dependencies = [
 [dependency-groups]
 dev = [
   "build>=1.5.1",
-  "mypy>=2.2.0",
+  "prek>=0.4.9",
+  "pyright>=1.1.411",
   "pytest>=9.1.1",
   "pytest-cov>=7.1.0",
   "ruff>=0.15.21",
@@ -143,16 +152,12 @@ line-length = 100
 target-version = "py310"
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+select = ["ALL"]
 
-[tool.mypy]
-python_version = "3.10"
-strict = true
-files = ["src"]
-
-[[tool.mypy.overrides]]
-module = ["oci", "oci.*"]
-ignore_missing_imports = true
+[tool.pyright]
+include = ["src", "tests"]
+pythonVersion = "3.10"
+typeCheckingMode = "strict"
 ```
 
 Create these package files:
@@ -221,7 +226,6 @@ SOFTWARE.
 .idea/
 .venv/
 .coverage
-.mypy_cache/
 .pytest_cache/
 .ruff_cache/
 __pycache__/
@@ -478,7 +482,7 @@ def create_dns_client(auth_type: str, credentials: str, profile: str) -> Any:
 
 - [ ] **Step 8: Run authentication tests and static checks**
 
-Run: `uv run pytest tests/test_auth.py -v && uv run ruff check src tests && uv run mypy src`
+Run: `uv run pytest tests/test_auth.py -v && uv run ruff check src tests`
 
 Expected: all authentication tests PASS and both static checks exit 0.
 
@@ -795,7 +799,7 @@ after a challenge value has been submitted:
 
 - [ ] **Step 8: Run DNS tests, coverage, and static checks**
 
-Run: `uv run pytest tests/test_dns_client.py -v --cov=certbot_dns_oraclecloud._internal.dns_client --cov-report=term-missing && uv run ruff check src tests && uv run mypy src`
+Run: `uv run pytest tests/test_dns_client.py -v --cov=certbot_dns_oraclecloud._internal.dns_client --cov-report=term-missing && uv run ruff check src tests`
 
 Expected: all DNS tests PASS, branch coverage is at least 95%, and static checks exit 0.
 
@@ -808,7 +812,99 @@ git commit -S -s -m "feat: add atomic OCI DNS record operations"
 
 ---
 
-### Task 4: Certbot Authenticator Integration
+### Task 4: Strict Quality Gate with prek, Ruff, and Pyright
+
+**Files:**
+- Create: `prek.toml`
+- Create: `src/certbot_dns_oraclecloud/_internal/protocols.py`
+- Modify: `pyproject.toml`
+- Modify: `uv.lock`
+- Modify: `src/certbot_dns_oraclecloud/_internal/auth.py`
+- Modify: `src/certbot_dns_oraclecloud/_internal/dns_client.py`
+- Modify: `tests/test_auth.py`
+- Modify: `tests/test_dns_client.py`
+- Create: `tests/test_quality_config.py`
+
+**Interfaces:**
+- Produces: one reproducible `uv run prek run --all-files` quality gate, Ruff's complete rule set, and strict Pyright coverage for source and tests.
+- Consumes: the authentication factory and DNS client from Tasks 2 and 3 without changing their public behavior.
+
+- [ ] **Step 1: Add failing configuration and traceback contracts**
+
+Add tests which assert that:
+
+- `pyproject.toml` contains current `prek`, Ruff, and Pyright dependencies and no mypy dependency or configuration;
+- Ruff selects `ALL`, Pyright uses `typeCheckingMode = "strict"`, Python 3.10, and includes `src` and `tests`;
+- `prek.toml` runs repository hygiene hooks, `ruff check`, `ruff format --check`, and `pyright`;
+- rendered authentication failure tracebacks do not contain credential paths, profiles, private-key details, signer tokens, or arbitrary exception sentinels; and
+- no production module uses `except Exception`, `except BaseException`, or a bare `except`.
+
+Run: `uv run pytest tests/test_quality_config.py tests/test_auth.py -v`
+
+Expected: FAIL because the strict gate and new traceback guarantees are not implemented yet.
+
+- [ ] **Step 2: Replace mypy and configure strict tools**
+
+Update the dev group to use the current releases `prek>=0.4.9`, `pyright>=1.1.411`, and `ruff>=0.15.21`; remove mypy entirely. Configure:
+
+```toml
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["ALL"]
+ignore = ["COM812", "D203", "D213", "ISC001"]
+
+[tool.pyright]
+include = ["src", "tests"]
+pythonVersion = "3.10"
+typeCheckingMode = "strict"
+```
+
+Use only narrow, documented per-file ignores where test idioms require them (for example assertions or private-member inspection). Do not globally disable annotation, exception, import-placement, or security rules.
+
+- [ ] **Step 3: Make prek the repository quality entry point**
+
+Create `prek.toml` with built-in hygiene checks for trailing whitespace, final newlines, TOML/YAML/JSON syntax, merge-conflict markers, and private keys. Add local system hooks which execute:
+
+```bash
+uv run ruff check .
+uv run ruff format --check .
+uv run pyright
+```
+
+The whole-repository hooks must set `pass_filenames = false` and run consistently through `uv run prek run --all-files`.
+
+- [ ] **Step 4: Introduce a typed OCI boundary and eliminate blind catches**
+
+Define precise protocols for the OCI DNS client, paginated responses, zones, and patch responses. Keep SDK-specific casts at this boundary rather than spreading `Any` through plugin code.
+
+Replace every broad exception handler with the narrow OCI configuration, signer, service, or request exception types appropriate to that operation. Translate only safe metadata. Construct the Certbot error after leaving the `except` block and raise it with suppressed context so rendered tracebacks cannot expose SDK messages, request bodies, tokens, config paths, validation values, or private-key details.
+
+- [ ] **Step 5: Run the new quality gate and tests**
+
+Run:
+
+```bash
+uv lock
+uv run prek run --all-files
+uv run pyright
+uv run pytest --cov --cov-report=term-missing
+```
+
+Expected: every command exits 0, source and tests are fully checked in strict mode, no broad exception handlers remain, and coverage remains at least 95%.
+
+- [ ] **Step 6: Commit strict quality tooling**
+
+```bash
+git add pyproject.toml uv.lock prek.toml src tests
+git commit -S -s -m "chore: enforce strict Python quality gates"
+```
+
+---
+
+### Task 5: Certbot Authenticator Integration
 
 **Files:**
 - Create: `src/certbot_dns_oraclecloud/_internal/dns_oraclecloud.py`
@@ -1023,7 +1119,7 @@ Expected: tests PASS with at least 95% branch coverage, and Certbot output conta
 
 - [ ] **Step 6: Run formatting, linting, and typing**
 
-Run: `uv run ruff format . && uv run ruff check . && uv run mypy src`
+Run: `uv run prek run --all-files && uv run pyright`
 
 Expected: all commands exit 0. If formatting changes files, rerun the full test command before committing.
 
@@ -1036,132 +1132,47 @@ git commit -S -s -m "feat: integrate OCI DNS with Certbot"
 
 ---
 
-### Task 5: User Documentation and Ubuntu CI Matrix
+### Task 6: Zensical Documentation and Ubuntu CI
 
 **Files:**
 - Modify: `README.md`
+- Modify: `pyproject.toml`
+- Modify: `uv.lock`
+- Create: `zensical.toml`
+- Create: `docs/index.md`
+- Create: `docs/installation.md`
+- Create: `docs/authentication.md`
+- Create: `docs/iam.md`
+- Create: `docs/development.md`
 - Create: `.github/workflows/ci.yml`
+- Create: `.github/workflows/docs.yml`
 
 **Interfaces:**
-- Produces: documented installation/authentication contract and automated Python 3.10-3.14 verification.
-- Consumes: all commands and public options implemented in Tasks 1-4.
+- Produces: a strict Zensical documentation site, GitHub Pages artifact deployment, and automated Python 3.10-3.14 verification.
+- Consumes: all commands and public options implemented in Tasks 1-5.
 
-- [ ] **Step 1: Write README with exact installation and use contracts**
+- [ ] **Step 1: Create the Zensical site and focused README**
 
-Create `README.md` with these sections and commands:
+Add a `docs` dependency group containing `zensical>=0.0.50`. Configure `zensical.toml` with the project name, repository URL, theme, and explicit navigation for Home, Installation, Authentication, OCI IAM, and Development.
 
-````markdown
-# certbot-dns-oraclecloud
+Move the detailed installation and usage contract into the Zensical pages. The pages must cover:
 
-Certbot DNS authenticator for DNS-01 challenges in public Oracle Cloud
-Infrastructure DNS zones.
+- installation with uv and Certbot plugin discovery;
+- explicit API-key, instance-principal, and resource-principal modes with no fallback;
+- public/global DNS only, propagation control, and exact-value cleanup semantics;
+- least-privilege OCI IAM examples for user and dynamic groups;
+- primary arm64 macOS development and standard `ubuntu-latest` CI; and
+- the complete `prek`, Pyright, test, docs, build, and wheel-verification commands.
 
-This is a new plugin and is not a drop-in replacement for `certbot-dns-oci`.
-It requires Python 3.10 or newer and uses the current OCI Python SDK.
+Keep `README.md` concise, with the project status, a short install example, the non-compatibility statement for `certbot-dns-oci`, and links into the documentation.
 
-## Installation
+- [ ] **Step 2: Build documentation strictly before adding CI**
 
-```shell
-uv tool install certbot --with certbot-dns-oraclecloud
-```
+Run: `uv sync --locked --all-groups && uv run zensical build --clean --strict`
 
-Confirm that Certbot can discover the plugin:
+Expected: the documentation builds without warnings into the configured site directory.
 
-```shell
-certbot plugins --text
-```
-
-## API-key authentication
-
-The default mode reads the `DEFAULT` profile from `~/.oci/config`:
-
-```shell
-certbot certonly \
-  --authenticator dns-oraclecloud \
-  --dns-oraclecloud-auth-type api_key \
-  --dns-oraclecloud-credentials ~/.oci/config \
-  --dns-oraclecloud-profile DEFAULT \
-  -d example.com -d '*.example.com'
-```
-
-## Instance-principal authentication
-
-Run on an OCI compute instance that belongs to an authorized dynamic group:
-
-```shell
-certbot certonly \
-  --authenticator dns-oraclecloud \
-  --dns-oraclecloud-auth-type instance_principal \
-  -d example.com -d '*.example.com'
-```
-
-## Resource-principal authentication
-
-Run in an OCI resource-principal environment such as an OCI Function:
-
-```shell
-certbot certonly \
-  --authenticator dns-oraclecloud \
-  --dns-oraclecloud-auth-type resource_principal \
-  -d example.com -d '*.example.com'
-```
-
-Authentication modes are explicit. The plugin never falls back from resource
-principal to instance principal or API-key authentication.
-
-## OCI IAM policy
-
-An API user group needs permission to read public zones and manage records:
-
-```text
-Allow group <certbot-group> to read dns-zones in compartment <dns-compartment>
-Allow group <certbot-group> to manage dns-records in compartment <dns-compartment>
-```
-
-For an instance or resource principal, grant the same verbs to the dynamic
-group containing that principal:
-
-```text
-Allow dynamic-group <certbot-dynamic-group> to read dns-zones in compartment <dns-compartment>
-Allow dynamic-group <certbot-dynamic-group> to manage dns-records in compartment <dns-compartment>
-```
-
-Adapt the policy scope to the tenancy's compartment model. The plugin accesses
-public (`GLOBAL`) zones only; private DNS cannot satisfy an external ACME
-DNS-01 check.
-
-## DNS propagation
-
-The default wait is 60 seconds. Override it when required:
-
-```shell
-certbot certonly \
-  --authenticator dns-oraclecloud \
-  --dns-oraclecloud-propagation-seconds 120 \
-  -d example.com
-```
-
-## Development
-
-The primary development platform is arm64 macOS. CI uses standard
-`ubuntu-latest` GitHub-hosted runners for cost efficiency.
-
-```shell
-uv sync --locked --all-groups
-uv run pytest --cov
-uv run ruff format --check .
-uv run ruff check .
-uv run mypy src
-uv build
-uv run twine check dist/*
-```
-
-## License
-
-UPL-1.0
-````
-
-- [ ] **Step 2: Create the Ubuntu CI matrix**
+- [ ] **Step 3: Create the Ubuntu CI matrix**
 
 ```yaml
 # .github/workflows/ci.yml
@@ -1197,14 +1208,8 @@ jobs:
       - name: Check lockfile
         run: uv lock --check
 
-      - name: Check formatting
-        run: uv run ruff format --check .
-
-      - name: Lint
-        run: uv run ruff check .
-
-      - name: Type check
-        run: uv run mypy src
+      - name: Run repository quality gate
+        run: uv run prek run --all-files
 
       - name: Test
         run: uv run pytest --cov --cov-report=term-missing
@@ -1219,16 +1224,27 @@ jobs:
         run: uv run twine check dist/*
 ```
 
-- [ ] **Step 3: Run the complete local release-equivalent verification**
+- [ ] **Step 4: Create the GitHub Pages documentation workflow**
+
+Use a dedicated `.github/workflows/docs.yml` on `ubuntu-latest` with a concrete supported Python version, read-only contents plus Pages/id-token deployment permissions, concurrency protection, and the official Pages artifact flow. Its build job must run:
+
+```bash
+uv sync --locked --group docs
+uv run zensical build --clean --strict
+```
+
+Upload Zensical's generated site directory with `actions/upload-pages-artifact`, then deploy it with `actions/deploy-pages`. Validate both workflows with `actionlint` when available.
+
+- [ ] **Step 5: Run the complete local release-equivalent verification**
 
 Run:
 
 ```bash
 uv lock --check
-uv run ruff format --check .
-uv run ruff check .
-uv run mypy src
+uv run prek run --all-files
+uv run pyright
 uv run pytest --cov --cov-report=term-missing
+uv run zensical build --clean --strict
 uv run certbot plugins --text
 uv build
 uv run twine check dist/*
@@ -1236,7 +1252,7 @@ uv run twine check dist/*
 
 Expected: every command exits 0; coverage is at least 95%; Certbot output contains `dns-oraclecloud`; wheel and source archive are created; Twine reports both distributions as `PASSED`.
 
-- [ ] **Step 4: Test the built wheel in a clean uv environment**
+- [ ] **Step 6: Test the built wheel in a clean uv environment**
 
 Run:
 
@@ -1249,7 +1265,7 @@ uv run --isolated --no-project \
 
 Expected: output lists `dns-oraclecloud` as an authenticator.
 
-- [ ] **Step 5: Review the final diff against the design**
+- [ ] **Step 7: Review the final diff against the design**
 
 Run: `git diff --check && git status --short && git diff --stat HEAD`
 
@@ -1260,14 +1276,14 @@ Confirm explicitly:
 - add/remove use exact patch operations and preserve other values;
 - errors cannot contain validation or credential material;
 - Python 3.10-3.14 and Ubuntu CI are represented;
-- README commands match the implemented option names; and
+- Zensical documentation commands match the implemented option names;
 - no legacy `certbot-dns-oci` compatibility behavior was added.
 
-- [ ] **Step 6: Commit documentation and CI**
+- [ ] **Step 8: Commit documentation and CI**
 
 ```bash
-git add README.md .github/workflows/ci.yml
-git commit -S -s -m "ci: verify supported Python releases on Ubuntu"
+git add README.md pyproject.toml uv.lock zensical.toml docs .github/workflows
+git commit -S -s -m "docs: publish Zensical project documentation"
 ```
 
 ---
@@ -1279,10 +1295,10 @@ Before claiming completion, run fresh:
 ```bash
 uv sync --locked --all-groups
 uv lock --check
-uv run ruff format --check .
-uv run ruff check .
-uv run mypy src
+uv run prek run --all-files
+uv run pyright
 uv run pytest --cov --cov-report=term-missing
+uv run zensical build --clean --strict
 uv run certbot plugins --text
 uv build --clear
 uv run twine check dist/*

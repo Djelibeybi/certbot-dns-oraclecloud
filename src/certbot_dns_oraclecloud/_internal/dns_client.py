@@ -73,9 +73,7 @@ class OciDnsClient:
                 scope="GLOBAL",
             )
         except ServiceError as exc:
-            plugin_error = self._plugin_error(
-                operation_name, validation_name, exc, include_message=False
-            )
+            plugin_error = self._plugin_error(operation_name, validation_name, exc)
         except Exception:
             plugin_error = errors.PluginError(
                 f"OCI DNS {operation_name} failed for {validation_name}."
@@ -89,14 +87,10 @@ class OciDnsClient:
         operation: str,
         record_name: str,
         exc: Any,
-        *,
-        include_message: bool = True,
     ) -> errors.PluginError:
         fields = [f"status={exc.status}"]
         if exc.code:
             fields.append(f"code={exc.code}")
-        if include_message and exc.message:
-            fields.append(f"message={exc.message}")
         return errors.PluginError(
             f"OCI DNS {operation} failed for {record_name}: {', '.join(fields)}"
         )

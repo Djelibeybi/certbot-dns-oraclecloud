@@ -28,7 +28,7 @@ def create_dns_client(auth_type: str, credentials: str, profile: str) -> Any:
 
         if auth_type == "resource_principal":
             return DnsClient(config={}, signer=get_resource_principals_signer())
-    except Exception as exc:
+    except Exception:
         label = {
             "api_key": "API-key",
             "instance_principal": "instance-principal",
@@ -40,6 +40,8 @@ def create_dns_client(auth_type: str, credentials: str, profile: str) -> Any:
         else:
             detail = ""
         message = f"Unable to initialize OCI {label} authentication{detail}."
-        raise errors.PluginError(message) from exc
+        plugin_error = errors.PluginError(message)
+    else:
+        raise errors.PluginError(f"Unsupported OCI authentication mode: {auth_type}")
 
-    raise errors.PluginError(f"Unsupported OCI authentication mode: {auth_type}")
+    raise plugin_error from None

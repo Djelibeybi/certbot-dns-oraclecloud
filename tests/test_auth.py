@@ -1,5 +1,6 @@
 """Tests for OCI DNS client authentication selection."""
 
+import traceback
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -37,6 +38,8 @@ def test_api_key_error_does_not_expose_sdk_exception(from_file: MagicMock) -> No
         create_dns_client("api_key", "~/.oci/config", "DEFAULT")
 
     assert secret not in str(raised.value)
+    rendered = "".join(traceback.format_exception(raised.type, raised.value, raised.tb))
+    assert secret not in rendered
     assert "API-key" in str(raised.value)
 
 
@@ -93,3 +96,5 @@ def test_resource_principal_failure_does_not_fall_back(
 
     instance_signer.assert_not_called()
     assert secret not in str(raised.value)
+    rendered = "".join(traceback.format_exception(raised.type, raised.value, raised.tb))
+    assert secret not in rendered

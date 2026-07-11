@@ -51,6 +51,27 @@ def test_find_zone_fails_immediately_on_non_404() -> None:
     assert sdk.get_zone.call_count == 1
 
 
+def test_find_zone_redacts_non_404_service_message() -> None:
+    sdk = MagicMock()
+    secret = "ZONE-SERVICE-SECRET"
+    sdk.get_zone.side_effect = ServiceError(
+        status=403,
+        code="NotAuthorized",
+        headers={},
+        message=secret,
+    )
+    client = OciDnsClient(sdk)
+
+    with pytest.raises(errors.PluginError) as raised:
+        client.find_zone("_acme-challenge.example.com")
+
+    assert secret not in str(raised.value)
+    rendered = "".join(traceback.format_exception(raised.type, raised.value, raised.tb))
+    assert secret not in rendered
+    assert "status=403" in str(raised.value)
+    assert "code=NotAuthorized" in str(raised.value)
+
+
 def test_find_zone_reports_when_no_public_zone_exists() -> None:
     sdk = MagicMock()
     sdk.get_zone.side_effect = service_error(404)

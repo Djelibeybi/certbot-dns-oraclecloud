@@ -11,6 +11,7 @@ import tomli
 from certbot_dns_oraclecloud._internal import auth, dns_client
 
 ROOT = Path(__file__).resolve().parents[1]
+PULL_REQUEST_SKIP_CONDITIONS = 3
 
 
 def _production_modules() -> Iterator[Path]:
@@ -130,3 +131,13 @@ def test_python314_wheel_verification_is_project_owned() -> None:
     assert "PYTHONPATH" not in script
     assert "uv sync" not in cleanup
     assert 'exit "$exit_status"' in cleanup
+
+
+def test_documentation_workflow_validates_pull_requests_without_deploying() -> None:
+    """Documentation builds strictly on PRs but publishes only from trusted events."""
+    workflow = (ROOT / ".github" / "workflows" / "docs.yml").read_text(encoding="utf-8")
+
+    assert "  pull_request:\n" in workflow
+    assert "run: uv run zensical build --clean --strict" in workflow
+    assert workflow.count("if: github.event_name != 'pull_request'") == PULL_REQUEST_SKIP_CONDITIONS
+    assert "    needs: build\n    if: github.event_name != 'pull_request'" in workflow

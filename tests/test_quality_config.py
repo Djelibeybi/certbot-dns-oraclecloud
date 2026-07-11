@@ -248,7 +248,8 @@ def test_pypi_deploy_job_is_trusted_and_consumes_only_release_artifacts() -> Non
 
     assert "needs: release" in deploy
     assert "if: needs.release.outputs.released == 'true'" in deploy
-    assert "permissions:\n      contents: read\n      id-token: write" in deploy
+    assert "permissions:\n      id-token: write" in deploy
+    assert "contents: read" not in deploy
     assert (
         "environment:\n      name: pypi\n"
         "      url: https://pypi.org/p/certbot-dns-oraclecloud" in deploy

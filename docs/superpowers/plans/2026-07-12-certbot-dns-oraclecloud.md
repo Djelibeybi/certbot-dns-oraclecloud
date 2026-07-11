@@ -31,7 +31,7 @@
 - `src/certbot_dns_oraclecloud/_internal/auth.py`: strict OCI authentication factory.
 - `src/certbot_dns_oraclecloud/_internal/dns_client.py`: public-zone discovery and exact record mutations.
 - `src/certbot_dns_oraclecloud/_internal/dns_oraclecloud.py`: Certbot authenticator and CLI options.
-- `tests/test_distribution.py`: package metadata and Certbot entry-point checks.
+- `tests/test_distribution.py`: package metadata checks, extended with Certbot entry-point checks in Task 4.
 - `tests/test_auth.py`: authentication-mode unit tests and secret-redaction checks.
 - `tests/test_dns_client.py`: zone discovery, payload, cleanup, and error tests.
 - `tests/test_dns_oraclecloud.py`: authenticator option and delegation tests.
@@ -56,32 +56,25 @@
 - Generate: `uv.lock`
 
 **Interfaces:**
-- Produces: installable package version `0.1.0` and `dns-oraclecloud` entry-point metadata.
+- Produces: installable package version `0.1.0`; Certbot entry-point metadata is added with its real target in Task 4.
 - Consumes: no project code.
 
 - [ ] **Step 1: Write the failing distribution metadata test**
 
 ```python
 # tests/test_distribution.py
-from importlib.metadata import entry_points, version
+from importlib.metadata import version
 
 
 def test_distribution_version() -> None:
     assert version("certbot-dns-oraclecloud") == "0.1.0"
-
-
-def test_certbot_entry_point_is_registered() -> None:
-    plugins = {entry.name: entry for entry in entry_points(group="certbot.plugins")}
-    assert plugins["dns-oraclecloud"].value == (
-        "certbot_dns_oraclecloud._internal.dns_oraclecloud:Authenticator"
-    )
 ```
 
 - [ ] **Step 2: Run the metadata test and verify it fails for the missing distribution**
 
 Run: `uvx --from pytest==9.1.1 pytest tests/test_distribution.py -v`
 
-Expected: FAIL because `certbot-dns-oraclecloud` is not installed and no entry point exists.
+Expected: FAIL because `certbot-dns-oraclecloud` is not installed.
 
 - [ ] **Step 3: Create package metadata and tool configuration**
 
@@ -119,9 +112,6 @@ dependencies = [
   "certbot>=5.6.0",
   "oci>=2.181.1",
 ]
-
-[project.entry-points."certbot.plugins"]
-dns-oraclecloud = "certbot_dns_oraclecloud._internal.dns_oraclecloud:Authenticator"
 
 [dependency-groups]
 dev = [
@@ -241,7 +231,7 @@ Expected: `uv.lock` is created and resolves Python 3.10 through 3.14 without dep
 
 Run: `uv run pytest tests/test_distribution.py -v`
 
-Expected: 2 tests PASS.
+Expected: 1 test PASS.
 
 - [ ] **Step 6: Verify package formatting and lock consistency**
 
@@ -804,12 +794,13 @@ git commit -S -s -m "feat: add atomic OCI DNS record operations"
 ### Task 4: Certbot Authenticator Integration
 
 **Files:**
-- Replace: `src/certbot_dns_oraclecloud/_internal/dns_oraclecloud.py`
+- Create: `src/certbot_dns_oraclecloud/_internal/dns_oraclecloud.py`
+- Modify: `pyproject.toml`
 - Create: `tests/test_dns_oraclecloud.py`
 - Modify: `tests/test_distribution.py`
 
 **Interfaces:**
-- Produces: Certbot `Authenticator` with `ttl = 60`, four `--dns-oraclecloud-*` options, and `_perform`/`_cleanup` hooks.
+- Produces: Certbot `Authenticator` with `ttl = 60`, four `--dns-oraclecloud-*` options, `_perform`/`_cleanup` hooks, and the loadable `dns-oraclecloud` entry point.
 - Consumes: `create_dns_client()` and `OciDnsClient` from Tasks 2 and 3.
 
 - [ ] **Step 1: Write failing parser and delegation tests**
@@ -886,11 +877,39 @@ def test_perform_requires_initialized_client() -> None:
         raise AssertionError("Expected an unprepared plugin error")
 ```
 
+Replace `tests/test_distribution.py` with the entry-point contract added:
+
+```python
+from importlib.metadata import entry_points, version
+
+
+def test_distribution_version() -> None:
+    assert version("certbot-dns-oraclecloud") == "0.1.0"
+
+
+def test_certbot_entry_point_is_registered() -> None:
+    plugins = {entry.name: entry for entry in entry_points(group="certbot.plugins")}
+    assert plugins["dns-oraclecloud"].value == (
+        "certbot_dns_oraclecloud._internal.dns_oraclecloud:Authenticator"
+    )
+
+
+def test_certbot_entry_point_loads_authenticator() -> None:
+    from certbot_dns_oraclecloud._internal.dns_oraclecloud import Authenticator
+
+    plugin = next(
+        entry
+        for entry in entry_points(group="certbot.plugins")
+        if entry.name == "dns-oraclecloud"
+    )
+    assert plugin.load() is Authenticator
+```
+
 - [ ] **Step 2: Run the authenticator tests and verify the missing-module failure**
 
 Run: `uv run pytest tests/test_dns_oraclecloud.py -v`
 
-Expected: collection ERROR because the real authenticator module does not exist.
+Expected: collection ERROR because the authenticator module does not exist; the distribution test also has no `dns-oraclecloud` entry point yet.
 
 - [ ] **Step 3: Implement the Certbot authenticator**
 
@@ -966,44 +985,35 @@ class Authenticator(dns_common.DNSAuthenticator):
         return self._dns
 ```
 
+Add the entry point to `pyproject.toml` only after the real target exists:
+
+```toml
+[project.entry-points."certbot.plugins"]
+dns-oraclecloud = "certbot_dns_oraclecloud._internal.dns_oraclecloud:Authenticator"
+```
+
 - [ ] **Step 4: Run authenticator tests**
 
 Run: `uv run pytest tests/test_dns_oraclecloud.py -v`
 
-Expected: 4 tests PASS.
+Expected: 4 authenticator tests and 3 distribution tests PASS.
 
-- [ ] **Step 5: Strengthen the distribution test by loading the entry point**
-
-Append to `tests/test_distribution.py`:
-
-```python
-def test_certbot_entry_point_loads_authenticator() -> None:
-    from certbot_dns_oraclecloud._internal.dns_oraclecloud import Authenticator
-
-    plugin = next(
-        entry
-        for entry in entry_points(group="certbot.plugins")
-        if entry.name == "dns-oraclecloud"
-    )
-    assert plugin.load() is Authenticator
-```
-
-- [ ] **Step 6: Run all tests and Certbot discovery**
+- [ ] **Step 5: Run all tests and Certbot discovery**
 
 Run: `uv run pytest -v --cov --cov-report=term-missing && uv run certbot plugins --text`
 
 Expected: tests PASS with at least 95% branch coverage, and Certbot output contains `dns-oraclecloud` with authenticator capability.
 
-- [ ] **Step 7: Run formatting, linting, and typing**
+- [ ] **Step 6: Run formatting, linting, and typing**
 
 Run: `uv run ruff format . && uv run ruff check . && uv run mypy src`
 
 Expected: all commands exit 0. If formatting changes files, rerun the full test command before committing.
 
-- [ ] **Step 8: Commit the Certbot integration**
+- [ ] **Step 7: Commit the Certbot integration**
 
 ```bash
-git add src/certbot_dns_oraclecloud/_internal/dns_oraclecloud.py tests
+git add pyproject.toml src/certbot_dns_oraclecloud/_internal/dns_oraclecloud.py tests
 git commit -S -s -m "feat: integrate OCI DNS with Certbot"
 ```
 

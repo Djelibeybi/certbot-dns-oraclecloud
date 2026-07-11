@@ -45,6 +45,15 @@ The implementation will declare Python `>=3.10`, use current dependency
 versions when the package is scaffolded, and commit a `uv.lock` file. CI will
 test Python 3.10, 3.11, 3.12, 3.13, and 3.14.
 
+## Development Platform
+
+The primary local development platform is arm64 macOS on Apple Silicon. This
+is a relevant architecture for OCI deployments because OCI supports
+Ampere-based Arm compute instances. GitHub Actions will nevertheless use the
+default Ubuntu runners: the plugin is platform-independent Python, and the
+standard Linux runners are substantially less expensive than macOS or hosted
+Arm runners. The Python-version matrix therefore runs on `ubuntu-latest`.
+
 ## Public Command-line Interface
 
 The authenticator will expose these Certbot options:

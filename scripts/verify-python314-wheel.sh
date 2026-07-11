@@ -2,17 +2,21 @@
 set -euo pipefail
 
 project_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-wheel_venv="$(mktemp -d "${TMPDIR:-/tmp}/certbot-dns-oraclecloud-python314.XXXXXX")"
+temporary_root="$(mktemp -d "${TMPDIR:-/tmp}/certbot-dns-oraclecloud-python314.XXXXXX")"
+project_venv="$temporary_root/project-venv"
+wheel_venv="$temporary_root/wheel-venv"
 
 cleanup() {
-  rm -rf -- "$wheel_venv"
-  uv sync --locked
+  local exit_status=$?
+  rm -rf -- "$temporary_root" || printf 'Could not remove temporary verification root\n' >&2
+  trap - EXIT
+  exit "$exit_status"
 }
 trap cleanup EXIT
 
 cd "$project_root"
-uv sync --locked --no-editable --python 3.14
-uv run --no-sync --python 3.14 pytest --cov --cov-report=term-missing
+UV_PROJECT_ENVIRONMENT="$project_venv" uv sync --locked --no-editable --python 3.14
+UV_PROJECT_ENVIRONMENT="$project_venv" uv run --no-sync --python 3.14 pytest --cov --cov-report=term-missing
 uv build --wheel
 
 wheel="$(find dist -maxdepth 1 -name 'certbot_dns_oraclecloud-*.whl' -print -quit)"

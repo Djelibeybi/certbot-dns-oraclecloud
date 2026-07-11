@@ -113,12 +113,20 @@ def test_oci_sdk_types_are_isolated_behind_precise_protocols() -> None:
 
 
 def test_python314_wheel_verification_is_project_owned() -> None:
-    """Python 3.14 verification avoids editable-install path injection."""
+    """Python 3.14 verification is isolated from the development environment."""
     script = (ROOT / "scripts" / "verify-python314-wheel.sh").read_text(encoding="utf-8")
+    cleanup = script.split("cleanup() {", maxsplit=1)[1].split("}", maxsplit=1)[0]
 
+    assert 'temporary_root="$(mktemp -d' in script
+    assert 'project_venv="$temporary_root/project-venv"' in script
+    sync_command = "uv sync --locked --no-editable --python 3.14"
+    assert f'UV_PROJECT_ENVIRONMENT="$project_venv" {sync_command}' in script
+    assert 'UV_PROJECT_ENVIRONMENT="$project_venv" uv run --no-sync --python 3.14 pytest' in script
     assert "uv sync --locked --no-editable --python 3.14" in script
     assert "uv build --wheel" in script
     assert "uv venv --clear --python 3.14" in script
     assert "uv pip install" in script
     assert "import certbot_dns_oraclecloud" in script
     assert "PYTHONPATH" not in script
+    assert "uv sync" not in cleanup
+    assert 'exit "$exit_status"' in cleanup

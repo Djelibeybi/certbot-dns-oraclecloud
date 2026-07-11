@@ -31,6 +31,9 @@ dependencies = [
   "oci>=2.181.1",
 ]
 
+[project.entry-points."certbot.plugins"]
+dns-oraclecloud = "certbot_dns_oraclecloud._internal.dns_oraclecloud:Authenticator"
+
 [dependency-groups]
 dev = [
   "build>=1.5.1",

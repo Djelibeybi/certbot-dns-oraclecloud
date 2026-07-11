@@ -10,6 +10,7 @@ nav = [
   { Authentication = "authentication.md" },
   { "OCI IAM" = "iam.md" },
   { Development = "development.md" },
+  { Changelog = "changelog.md" },
 ]
 
 [project.theme]

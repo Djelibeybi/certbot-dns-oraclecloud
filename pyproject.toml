@@ -44,6 +44,7 @@ dev = [
   "pyright>=1.1.411",
   "pytest>=9.1.1",
   "pytest-cov>=7.1.0",
+  "python-semantic-release>=10.6.1",
   "ruff>=0.15.21",
   "tomli>=2.3.0",
   "twine>=6.2.0",
@@ -81,3 +82,38 @@ ignore = ["COM812", "D203", "D213", "ISC001"]
 include = ["src", "tests"]
 pythonVersion = "3.10"
 typeCheckingMode = "strict"
+
+[tool.semantic_release]
+version_toml = ["pyproject.toml:project.version"]
+build_command = """
+    uv lock --upgrade-package "$PACKAGE_NAME"
+    git add uv.lock
+    uv build
+"""
+
+[tool.semantic_release.branches.main]
+match = "main"
+prerelease = false
+
+[tool.semantic_release.branches.dev]
+match = "(?!main$).*"
+prerelease = true
+prerelease_token = "dev"
+
+[tool.semantic_release.changelog]
+exclude_commit_patterns = [
+  '''chore(?:\([^)]*?\))?: .+''',
+  '''ci(?:\([^)]*?\))?: .+''',
+  '''refactor(?:\([^)]*?\))?: .+''',
+  '''style(?:\([^)]*?\))?: .+''',
+  '''test(?:\([^)]*?\))?: .+''',
+  '''build\((?!deps\): .+)''',
+  '''Initial [Cc]ommit.*''',
+]
+
+[tool.semantic_release.changelog.default_templates]
+changelog_file = "docs/changelog.md"
+output_format = "md"
+
+[tool.semantic_release.remote]
+ignore_token_for_push = true

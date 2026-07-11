@@ -3,6 +3,7 @@
 import ast
 import importlib
 import inspect
+import re
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -11,6 +12,17 @@ import tomli
 from certbot_dns_oraclecloud._internal import auth, dns_client
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def _workflow_job(workflow: str, job_name: str) -> str:
+    """Return one top-level GitHub Actions job definition."""
+    match = re.search(
+        rf"^  {re.escape(job_name)}:\n.*?(?=^  [a-z][a-z0-9_-]*:\n|\Z)",
+        workflow,
+        flags=re.DOTALL | re.MULTILINE,
+    )
+    assert match is not None, f"{job_name!r} job is missing"
+    return match.group(0)
 
 
 def _production_modules() -> Iterator[Path]:
@@ -59,7 +71,7 @@ def test_ruff_and_pyright_are_strict_and_cover_source_and_tests() -> None:
 
 
 def test_prek_is_the_all_files_quality_entry_point() -> None:
-    """Prek runs hygiene, lint, format checking, and strict type checking."""
+    """Prek runs hygiene without replacing the CI non-editable project install."""
     config_path = ROOT / "prek.toml"
     config = tomli.loads(config_path.read_text(encoding="utf-8"))
     hooks = [hook for repo in config["repos"] for hook in repo["hooks"]]
@@ -76,9 +88,9 @@ def test_prek_is_the_all_files_quality_entry_point() -> None:
         "detect-private-key",
     } <= hook_ids
     quality_entries = {
-        "uv run ruff check .",
-        "uv run ruff format --check .",
-        "uv run pyright",
+        "uv run --no-sync ruff check .",
+        "uv run --no-sync ruff format --check .",
+        "uv run --no-sync pyright",
     }
     assert quality_entries <= entries
     for hook in hooks:
@@ -160,3 +172,130 @@ def test_documentation_workflow_validates_pull_requests_without_deploying() -> N
     runs-on: ubuntu-latest"""
         in workflow
     )
+
+
+def test_semantic_release_configuration_keeps_version_and_lock_in_sync() -> None:
+    """PSR stamps the package version, rebuilds the lock, and writes the changelog."""
+    pyproject = tomli.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    dependencies = pyproject["dependency-groups"]["dev"]
+    semantic_release = pyproject["tool"]["semantic_release"]
+
+    assert "python-semantic-release>=10.6.1" in dependencies
+    assert semantic_release["version_toml"] == ["pyproject.toml:project.version"]
+    assert 'uv lock --upgrade-package "$PACKAGE_NAME"' in semantic_release["build_command"]
+    assert "git add uv.lock" in semantic_release["build_command"]
+    assert "uv build" in semantic_release["build_command"]
+    assert semantic_release["branches"]["main"] == {"match": "main", "prerelease": False}
+    assert semantic_release["branches"]["dev"] == {
+        "match": "(?!main$).*",
+        "prerelease": True,
+        "prerelease_token": "dev",
+    }
+    assert semantic_release["changelog"]["exclude_commit_patterns"] == [
+        r"chore(?:\([^)]*?\))?: .+",
+        r"ci(?:\([^)]*?\))?: .+",
+        r"refactor(?:\([^)]*?\))?: .+",
+        r"style(?:\([^)]*?\))?: .+",
+        r"test(?:\([^)]*?\))?: .+",
+        r"build\((?!deps\): .+)",
+        r"Initial [Cc]ommit.*",
+    ]
+    assert semantic_release["changelog"]["default_templates"] == {
+        "changelog_file": "docs/changelog.md",
+        "output_format": "md",
+    }
+    assert semantic_release["remote"] == {"ignore_token_for_push": True}
+
+
+def test_release_job_only_runs_after_main_matrix_success_and_preserves_release_assets() -> None:
+    """Release has its own write scope and only follows a successful main-branch matrix."""
+    workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    release = _workflow_job(workflow, "release")
+
+    assert "  push:\n    tags-ignore: ['**']\n" in workflow
+    assert "  pull_request:\n" in workflow
+    assert "needs: test" in release
+    assert "if: github.event_name == 'push' && github.ref == 'refs/heads/main'" in release
+    assert "permissions:\n      contents: write" in release
+    assert "id-token: write" not in release
+    assert "env:\n      PACKAGE_NAME: certbot-dns-oraclecloud" in release
+    assert "group: ${{ github.workflow }}-release-${{ github.ref_name }}" in release
+    assert "cancel-in-progress: false" in release
+    assert "fetch-depth: 0" in release
+    assert "ssh-key: ${{ secrets.DEPLOY_KEY }}" in release
+    assert 'git config --local user.email "github-actions@github.com"' in release
+    assert 'git config --local user.name "GitHub Actions"' in release
+    assert "git config --local commit.gpgsign false" in release
+    assert "git config --local tag.gpgsign false" in release
+    assert "id: release" in release
+    assert "uv run --no-sync semantic-release version" in release
+    assert "uv run --no-sync semantic-release publish" in release
+    assert "uv run --with python-semantic-release" not in release
+    assert "if: steps.release.outputs.released == 'true'" in release
+    assert re.search(
+        r"uses: actions/upload-artifact@[0-9a-f]{40} # v7\.0\.1",
+        release,
+    )
+    assert "name: distribution-artifacts" in release
+    assert "path: dist" in release
+    assert "if-no-files-found: error" in release
+
+
+def test_pypi_deploy_job_is_trusted_and_consumes_only_release_artifacts() -> None:
+    """PyPI credentials are available only to the gated trusted-publishing job."""
+    workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    deploy = _workflow_job(workflow, "deploy")
+
+    assert "needs: release" in deploy
+    assert "if: needs.release.outputs.released == 'true'" in deploy
+    assert "permissions:\n      contents: read\n      id-token: write" in deploy
+    assert (
+        "environment:\n      name: pypi\n"
+        "      url: https://pypi.org/p/certbot-dns-oraclecloud" in deploy
+    )
+    assert re.search(
+        r"uses: actions/download-artifact@[0-9a-f]{40} # v8\.0\.1",
+        deploy,
+    )
+    assert "name: distribution-artifacts" in deploy
+    assert "path: dist" in deploy
+    assert "test -n \"$(find dist -type f -name '*.whl' -print -quit)\"" in deploy
+    assert "test -n \"$(find dist -type f -name '*.tar.gz' -print -quit)\"" in deploy
+    assert re.search(
+        r"uses: pypa/gh-action-pypi-publish@[0-9a-f]{40} # v1\.14\.0",
+        deploy,
+    )
+    assert "packages-dir: dist" in deploy
+
+
+def test_ci_matrix_uploads_one_coverage_report_and_per_interpreter_test_results() -> None:
+    """Only 3.14 uploads aggregate coverage; every non-cancelled run uploads JUnit."""
+    workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    test = _workflow_job(workflow, "test")
+    pytest_command = (
+        "uv run --no-sync pytest --cov --cov-branch --cov-report=xml "
+        "--junitxml=junit.xml -o junit_family=legacy"
+    )
+    representative_condition = "${{ !cancelled() && matrix.python-version == '3.14' }}"
+
+    assert pytest_command in test
+    assert test.count("pytest") == 1
+    assert (
+        """      - uses: codecov/codecov-action@0fb7174895f61a3b6b78fc075e0cd60383518dac # v5.5.5
+        if: ${{ !cancelled() && matrix.python-version == '3.14' }}
+        with:
+          files: coverage.xml
+          token: ${{ secrets.CODECOV_TOKEN }}
+          slug: Djelibeybi/certbot-dns-oraclecloud"""
+        in test
+    )
+    assert (
+        """      - name: Upload test results to Codecov
+        if: ${{ !cancelled() }}
+        uses: codecov/test-results-action@0fa95f0e1eeaafde2c782583b36b28ad0d8c77d3 # v1.2.1
+        with:
+          files: junit.xml
+          token: ${{ secrets.CODECOV_TOKEN }}"""
+        in test
+    )
+    assert representative_condition in test

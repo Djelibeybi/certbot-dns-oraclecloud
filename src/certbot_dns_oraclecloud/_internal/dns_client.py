@@ -32,11 +32,12 @@ class OciDnsClient:
             except ServiceError as exc:
                 if exc.status == 404:
                     continue
-                raise self._plugin_error("zone lookup", validation_name, exc) from exc
-            except Exception as exc:
-                raise errors.PluginError(
+                plugin_error = self._plugin_error("zone lookup", validation_name, exc)
+            except Exception:
+                plugin_error = errors.PluginError(
                     f"OCI DNS zone lookup failed for {validation_name}."
-                ) from exc
+                )
+            raise plugin_error from None
         raise errors.PluginError(f"Unable to find a public OCI DNS zone for {validation_name}.")
 
     def add_txt_record(self, validation_name: str, validation: str, ttl: int) -> None:
@@ -72,13 +73,16 @@ class OciDnsClient:
                 scope="GLOBAL",
             )
         except ServiceError as exc:
-            raise self._plugin_error(
+            plugin_error = self._plugin_error(
                 operation_name, validation_name, exc, include_message=False
-            ) from exc
-        except Exception as exc:
-            raise errors.PluginError(
+            )
+        except Exception:
+            plugin_error = errors.PluginError(
                 f"OCI DNS {operation_name} failed for {validation_name}."
-            ) from exc
+            )
+        else:
+            return
+        raise plugin_error from None
 
     @staticmethod
     def _plugin_error(

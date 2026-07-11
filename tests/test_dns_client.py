@@ -1,5 +1,6 @@
 """Tests for narrow public OCI DNS record operations."""
 
+import traceback
 from unittest.mock import MagicMock, call
 
 import pytest
@@ -125,13 +126,16 @@ def test_mutation_error_does_not_expose_validation_value() -> None:
         client.add_txt_record("_acme-challenge.example.com", secret_validation, 60)
 
     assert secret_validation not in str(raised.value)
+    rendered = "".join(traceback.format_exception(raised.type, raised.value, raised.tb))
+    assert secret_validation not in rendered
     assert "status=409" in str(raised.value)
 
 
 def test_transport_mutation_error_does_not_expose_validation_value() -> None:
     sdk = MagicMock()
     sdk.get_zone.return_value = object()
-    sdk.patch_zone_records.side_effect = RuntimeError("transport internals")
+    transport_secret = "transport internals"
+    sdk.patch_zone_records.side_effect = RuntimeError(transport_secret)
     client = OciDnsClient(sdk)
     secret_validation = "do-not-log-this-token"
 
@@ -139,4 +143,6 @@ def test_transport_mutation_error_does_not_expose_validation_value() -> None:
         client.add_txt_record("_acme-challenge.example.com", secret_validation, 60)
 
     assert secret_validation not in str(raised.value)
-    assert "transport internals" not in str(raised.value)
+    assert transport_secret not in str(raised.value)
+    rendered = "".join(traceback.format_exception(raised.type, raised.value, raised.tb))
+    assert transport_secret not in rendered

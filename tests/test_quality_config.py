@@ -212,7 +212,8 @@ def test_release_job_only_runs_after_main_matrix_success_and_preserves_release_a
     workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
     release = _workflow_job(workflow, "release")
 
-    assert "  push:\n    tags-ignore: ['**']\n" in workflow
+    assert "  push:\n    branches:\n      - main\n" in workflow
+    assert "tags-ignore" not in workflow
     assert "  pull_request:\n" in workflow
     assert "needs: test" in release
     assert "if: github.event_name == 'push' && github.ref == 'refs/heads/main'" in release

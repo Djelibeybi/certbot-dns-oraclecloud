@@ -1,0 +1,173 @@
+name: CI
+
+on:
+  push:
+    tags-ignore: ['**']
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Install uv and Python
+        uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+        with:
+          python-version: ${{ matrix.python-version }}
+          enable-cache: true
+
+      - name: Install locked dependencies without editable imports
+        run: uv sync --locked --all-groups --no-editable
+
+      - name: Check lockfile
+        run: uv lock --check
+
+      - name: Run repository quality gate
+        run: uv run --no-sync prek run --all-files
+
+      - name: Type check
+        run: uv run --no-sync pyright
+
+      - name: Test with coverage
+        run: uv run --no-sync pytest --cov --cov-branch --cov-report=xml --junitxml=junit.xml -o junit_family=legacy
+
+      - uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
+        if: ${{ !cancelled() && matrix.python-version == '3.14' }}
+        with:
+          files: coverage.xml
+          token: ${{ secrets.CODECOV_TOKEN }}
+          slug: Djelibeybi/certbot-dns-oraclecloud
+
+      - name: Upload test results to Codecov
+        if: ${{ !cancelled() }}
+        uses: codecov/test-results-action@0fa95f0e1eeaafde2c782583b36b28ad0d8c77d3 # v1.2.1
+        with:
+          files: junit.xml
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+      - name: Verify Certbot discovery
+        run: uv run --no-sync certbot plugins --text | grep dns-oraclecloud
+
+      - name: Build distributions
+        run: uv build --clear
+
+      - name: Validate distributions
+        run: uv run --no-sync twine check dist/*
+
+      - name: Verify Python 3.14 wheel without editable imports
+        if: matrix.python-version == '3.14'
+        run: ./scripts/verify-python314-wheel.sh
+
+  release:
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      PACKAGE_NAME: certbot-dns-oraclecloud
+    concurrency:
+      group: ${{ github.workflow }}-release-${{ github.ref_name }}
+      cancel-in-progress: false
+    outputs:
+      released: ${{ steps.release.outputs.released }}
+      version: ${{ steps.release.outputs.version }}
+      tag: ${{ steps.release.outputs.tag }}
+      is_prerelease: ${{ steps.release.outputs.is_prerelease }}
+
+    steps:
+      - name: Checkout release branch with deploy key
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+          ssh-key: ${{ secrets.DEPLOY_KEY }}
+
+      - name: Install uv and Python
+        uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+        with:
+          python-version: "3.14"
+          enable-cache: true
+
+      - name: Install locked release dependencies
+        run: uv sync --locked --all-groups --no-editable
+
+      - name: Configure release identity
+        run: |
+          git config --local user.email "github-actions@github.com"
+          git config --local user.name "GitHub Actions"
+          git config --local commit.gpgsign false
+          git config --local tag.gpgsign false
+
+      - name: Create GitHub release and assets
+        id: release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set +e
+          output="$(uv run --no-sync semantic-release version 2>&1)"
+          status=$?
+          set -e
+          printf '%s\n' "$output"
+          if [ "$status" -ne 0 ]; then
+            exit "$status"
+          fi
+          if printf '%s\n' "$output" | grep -q "No release will be made"; then
+            echo "released=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          version="$(uv run --no-sync python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')"
+          {
+            echo "released=true"
+            echo "version=$version"
+            echo "tag=v$version"
+            case "$version" in
+              *-*) echo "is_prerelease=true" ;;
+              *) echo "is_prerelease=false" ;;
+            esac
+          } >> "$GITHUB_OUTPUT"
+          uv run --no-sync semantic-release publish
+
+      - name: Upload distribution artifacts
+        if: steps.release.outputs.released == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: distribution-artifacts
+          path: dist
+          if-no-files-found: error
+
+  deploy:
+    needs: release
+    if: needs.release.outputs.released == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+    environment:
+      name: pypi
+      url: https://pypi.org/p/certbot-dns-oraclecloud
+
+    steps:
+      - name: Download distribution artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: distribution-artifacts
+          path: dist
+
+      - name: Verify downloaded distribution artifacts
+        run: |
+          test -n "$(find dist -type f -name '*.whl' -print -quit)"
+          test -n "$(find dist -type f -name '*.tar.gz' -print -quit)"
+
+      - name: Publish package distributions to PyPI
+        uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b # v1.14.0
+        with:
+          packages-dir: dist

@@ -1,0 +1,20 @@
+[[repos]]
+repo = "https://github.com/pre-commit/pre-commit-hooks"
+rev = "v6.0.0"
+hooks = [
+  { id = "trailing-whitespace" },
+  { id = "end-of-file-fixer" },
+  { id = "check-toml" },
+  { id = "check-yaml" },
+  { id = "check-json" },
+  { id = "check-merge-conflict" },
+  { id = "detect-private-key" },
+]
+
+[[repos]]
+repo = "local"
+hooks = [
+  { id = "ruff-check", name = "ruff check", entry = "uv run --no-sync ruff check .", language = "system", pass_filenames = false },
+  { id = "ruff-format", name = "ruff format check", entry = "uv run --no-sync ruff format --check .", language = "system", pass_filenames = false },
+  { id = "pyright", name = "pyright", entry = "uv run --no-sync pyright", language = "system", pass_filenames = false },
+]

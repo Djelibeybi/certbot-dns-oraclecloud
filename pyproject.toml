@@ -31,13 +31,22 @@ dependencies = [
   "oci>=2.181.1",
 ]
 
+[project.entry-points."certbot.plugins"]
+dns-oraclecloud = "certbot_dns_oraclecloud._internal.dns_oraclecloud:Authenticator"
+
 [dependency-groups]
+docs = [
+  "zensical>=0.0.50",
+]
 dev = [
   "build>=1.5.1",
-  "mypy>=2.2.0",
+  "prek>=0.4.9",
+  "pyright>=1.1.411",
   "pytest>=9.1.1",
   "pytest-cov>=7.1.0",
+  "python-semantic-release>=10.6.1",
   "ruff>=0.15.21",
+  "tomli>=2.3.0",
   "twine>=6.2.0",
 ]
 
@@ -61,13 +70,50 @@ line-length = 100
 target-version = "py310"
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+select = ["ALL"]
+ignore = ["COM812", "D203", "D213", "ISC001"]
 
-[tool.mypy]
-python_version = "3.10"
-strict = true
-files = ["src"]
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["D100", "D103", "S101", "S105"]
+"tests/test_dns_client.py" = ["PLR2004"]
+"tests/test_quality_config.py" = ["SLF001"]
 
-[[tool.mypy.overrides]]
-module = ["oci", "oci.*"]
-ignore_missing_imports = true
+[tool.pyright]
+include = ["src", "tests"]
+pythonVersion = "3.10"
+typeCheckingMode = "strict"
+
+[tool.semantic_release]
+version_toml = ["pyproject.toml:project.version"]
+build_command = """
+    uv lock --upgrade-package "$PACKAGE_NAME"
+    git add uv.lock
+    uv build
+"""
+
+[tool.semantic_release.branches.main]
+match = "main"
+prerelease = false
+
+[tool.semantic_release.branches.dev]
+match = "(?!main$).*"
+prerelease = true
+prerelease_token = "dev"
+
+[tool.semantic_release.changelog]
+exclude_commit_patterns = [
+  '''chore(?:\([^)]*?\))?: .+''',
+  '''ci(?:\([^)]*?\))?: .+''',
+  '''refactor(?:\([^)]*?\))?: .+''',
+  '''style(?:\([^)]*?\))?: .+''',
+  '''test(?:\([^)]*?\))?: .+''',
+  '''build\((?!deps\): .+)''',
+  '''Initial [Cc]ommit.*''',
+]
+
+[tool.semantic_release.changelog.default_templates]
+changelog_file = "docs/changelog.md"
+output_format = "md"
+
+[tool.semantic_release.remote]
+ignore_token_for_push = true

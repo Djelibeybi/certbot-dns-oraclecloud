@@ -1,0 +1,22 @@
+[project]
+site_name = "certbot-dns-oraclecloud"
+site_description = "Certbot DNS-01 authenticator for public OCI DNS zones"
+site_url = "https://djelibeybi.github.io/certbot-dns-oraclecloud/"
+repo_url = "https://github.com/Djelibeybi/certbot-dns-oraclecloud"
+repo_name = "Djelibeybi/certbot-dns-oraclecloud"
+nav = [
+  { Home = "index.md" },
+  { "Getting Started" = "GETTING-STARTED.md" },
+  { Installation = "installation.md" },
+  { Configuration = "CONFIGURATION.md" },
+  { Authentication = "authentication.md" },
+  { "OCI IAM" = "iam.md" },
+  { Architecture = "ARCHITECTURE.md" },
+  { Testing = "TESTING.md" },
+  { Development = "development.md" },
+  { Changelog = "changelog.md" },
+]
+
+[project.theme]
+variant = "classic"
+language = "en"

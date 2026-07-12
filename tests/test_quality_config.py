@@ -282,7 +282,7 @@ def test_ci_matrix_uploads_one_coverage_report_and_per_interpreter_test_results(
     assert pytest_command in test
     assert test.count("pytest") == 1
     assert (
-        """      - uses: codecov/codecov-action@0fb7174895f61a3b6b78fc075e0cd60383518dac # v5.5.5
+        """      - uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
         if: ${{ !cancelled() && matrix.python-version == '3.14' }}
         with:
           files: coverage.xml

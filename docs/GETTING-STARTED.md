@@ -37,6 +37,9 @@ No additional system packages are required by the repository.
    uv sync --locked --all-groups --no-editable
    ```
 
+4. Before contributing, complete the Git hook step in
+   [Development](development.md#local-setup).
+
 ## First run
 
 Run the test suite from the repository root:

@@ -36,6 +36,10 @@ standard GitHub-hosted `ubuntu-latest` runners and covers Python 3.10 through
    uv sync --locked --all-groups --no-editable
    ```
 
+5. Run `prek install` to install the Git hook shim for this checkout. See the
+   [Prek documentation](https://prek.j178.dev/) for installation and hook
+   management details.
+
 No OCI credentials or live tenancy are needed for the unit test suite. If a
 change requires integration testing against OCI DNS, use an explicitly
 authorised non-production public zone and least-privilege credentials. Never
@@ -44,15 +48,15 @@ values in source control, test fixtures, issues, or logs.
 
 ## Build commands
 
-The repository does not use a task runner; invoke its uv-managed tools
-directly. Commands containing `--no-sync` assume the local setup step has
-already installed the locked environment.
+The repository does not use a task runner. Use bare `prek` for Git hook
+management and invoke Python tools through uv. Commands containing `--no-sync`
+assume the local setup step has already installed the locked environment.
 
 | Command | Description |
 | --- | --- |
 | `uv sync --locked --all-groups --no-editable` | Install the locked runtime, development, and documentation dependencies without an editable project import. |
 | `uv lock --check` | Confirm that `uv.lock` agrees with `pyproject.toml`. |
-| `uv run --no-sync prek run --all-files` | Run repository hygiene, Ruff linting and formatting checks, and strict Pyright checks over all files. |
+| `prek run --all-files` | Run repository hygiene, Ruff linting and formatting checks, and strict Pyright checks over every tracked file. |
 | `uv run --no-sync pyright` | Run strict static type checking over `src/` and `tests/`. |
 | `uv run --no-sync pytest --cov --cov-branch --cov-report=xml --junitxml=junit.xml -o junit_family=legacy` | Run the full test suite with branch coverage plus Codecov-compatible XML and JUnit reports. |
 | `uv run --no-sync zensical build --clean --strict` | Build the documentation site and fail on documentation errors. |

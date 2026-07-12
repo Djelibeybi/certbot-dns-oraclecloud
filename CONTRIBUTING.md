@@ -19,15 +19,18 @@ environment management. Install the locked development environment with:
 uv sync --locked --all-groups --no-editable
 ```
 
+Then follow the [local development setup](docs/development.md#local-setup) to
+install the repository's Git hooks.
+
 The unit test suite does not require OCI credentials or access to a live
 tenancy. If integration testing is necessary, use an explicitly authorised,
 non-production public DNS zone and least-privilege credentials.
 
 ## Coding standards
 
-- Run `uv run --no-sync prek run --all-files` before submitting a change. Prek
-  checks repository hygiene and invokes Ruff and Pyright; CI enforces the same
-  gate.
+- Follow the [Prek workflow in the development
+  guide](docs/development.md#local-setup); CI enforces the same repository
+  standards.
 - Ruff provides formatting, linting, and import-order checks. Use
   `uv run --no-sync ruff format .` and `uv run --no-sync ruff check --fix .`
   while developing.

@@ -16,6 +16,7 @@ prefer `--no-sync` on run commands to match it.
 
 ```bash
 uv sync --locked --all-groups --no-editable   # set up env exactly as CI does
+prek install                                   # install automatic Git commit hooks
 uv run --no-sync pytest                        # run the test suite
 uv run --no-sync pytest tests/test_auth.py     # single test file
 uv run --no-sync pytest tests/test_auth.py::test_api_key_loads_requested_file_and_profile   # single test
@@ -23,13 +24,14 @@ uv run --no-sync pytest --cov --cov-branch     # with coverage (gate: 95%, see p
 uv run --no-sync ruff check .                  # lint (rule set = ALL)
 uv run --no-sync ruff format .                 # format
 uv run --no-sync pyright                        # type check (strict mode)
-uv run --no-sync prek run --all-files          # full local quality gate (hygiene + ruff + pyright)
+prek run --all-files                            # explicit full-repository quality gate
 uv run --no-sync certbot plugins --text | grep dns-oraclecloud   # verify plugin discovery
 uv run --no-sync zensical serve                # preview docs locally
 ```
 
-`prek run --all-files` is the single quality entry point mirrored by CI. `./scripts/verify-python314-wheel.sh`
-does an extra non-editable wheel install check on 3.14.
+`prek install` wires the configured checks into Git commits. `prek run --all-files` is the explicit
+whole-repository quality entry point mirrored by CI. `./scripts/verify-python314-wheel.sh` does an
+extra non-editable wheel install check on 3.14.
 
 ## Architecture
 

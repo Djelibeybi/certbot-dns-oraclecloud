@@ -1,12 +1,20 @@
 """Tests for installed distribution metadata and Certbot discovery."""
 
 from importlib.metadata import entry_points, version
+from pathlib import Path
+
+import tomli
 
 from certbot_dns_oraclecloud._internal.dns_oraclecloud import Authenticator
 
 
 def test_distribution_version() -> None:
-    assert version("certbot-dns-oraclecloud") == "0.1.0"
+    """Installed metadata matches the version declared by the project."""
+    pyproject = tomli.loads(
+        (Path(__file__).resolve().parents[1] / "pyproject.toml").read_text(encoding="utf-8")
+    )
+
+    assert version("certbot-dns-oraclecloud") == pyproject["project"]["version"]
 
 
 def test_certbot_entry_point_is_registered() -> None:

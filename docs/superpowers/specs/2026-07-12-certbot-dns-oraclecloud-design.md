@@ -95,7 +95,7 @@ The authentication factory has one explicit branch per mode:
   `InstancePrincipalsSecurityTokenSigner` and passes it to `DnsClient` with an
   empty config mapping.
 - `resource_principal` obtains the current SDK resource-principal signer with
-  `get_resource_principals_signer()` and passes it to `DnsClient` with an empty
+  `_resource_principal_signer()` and passes it to `DnsClient` with an empty
   config mapping.
 
 Invalid options and signer initialization failures are surfaced immediately.

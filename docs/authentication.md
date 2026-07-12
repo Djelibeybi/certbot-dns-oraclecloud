@@ -48,8 +48,9 @@ certbot certonly --authenticator dns-oraclecloud \
   -d example.com
 ```
 
-`--dns-oraclecloud-credentials` and `--dns-oraclecloud-profile` are not read
-in this mode. If signer initialization fails, Certbot stops; it does not try an
+The `Authenticator` reads the configured `--dns-oraclecloud-credentials` and
+`--dns-oraclecloud-profile` values before dispatch, but the instance-principal
+client factory does not use them. If signer initialization fails, Certbot stops; it does not try an
 API key or a resource principal.
 
 ## Resource principal

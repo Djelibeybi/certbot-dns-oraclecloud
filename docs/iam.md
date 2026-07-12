@@ -1,5 +1,6 @@
 # OCI IAM
 
+<!-- VERIFY: Confirm the OCI IAM verbs and resource types required for public DNS zone discovery and record updates. -->
 Grant the identity used by Certbot access only to the compartment that contains
 the public DNS zones it must validate. Zone discovery reads DNS zones; each
 DNS-01 lifecycle patches records, so it also needs DNS-record management.
@@ -12,6 +13,8 @@ Allow group CertbotDnsOperators to read dns-zones in compartment CertbotDns
 Allow group CertbotDnsOperators to manage dns-records in compartment CertbotDns
 ```
 
+<!-- VERIFY: Confirm whether OCI instance and resource principals must be assigned through dynamic groups. -->
+<!-- VERIFY: Confirm whether dynamic groups use the same DNS IAM permissions as API-key user groups. -->
 For an instance principal or resource principal, assign the corresponding OCI
 workload to a dynamic group and grant the same least-privilege permissions:
 

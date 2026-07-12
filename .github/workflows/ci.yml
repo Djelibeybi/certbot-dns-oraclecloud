@@ -72,8 +72,6 @@ jobs:
     needs: test
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     env:
       PACKAGE_NAME: certbot-dns-oraclecloud
     concurrency:
@@ -86,11 +84,20 @@ jobs:
       is_prerelease: ${{ steps.release.outputs.is_prerelease }}
 
     steps:
-      - name: Checkout release branch with deploy key
+      - name: Create release App token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.PSR_APP_CLIENT_ID }}
+          private-key: ${{ secrets.PSR_APP_PRIVATE_KEY }}
+          permission-contents: write
+
+      - name: Checkout release branch with App token
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 0
-          ssh-key: ${{ secrets.DEPLOY_KEY }}
+          token: ${{ steps.app-token.outputs.token }}
+          persist-credentials: false
 
       - name: Install uv and Python
         uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
@@ -111,8 +118,8 @@ jobs:
       - name: Create GitHub release and assets
         id: release
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           set +e
           output="$(uv run --no-sync semantic-release version 2>&1)"
